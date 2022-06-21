@@ -1,5 +1,5 @@
 FROM php:7-apache
-MAINTAINER Dare dare@zooto.io
+LABEL Dare dare@zooto.io
 
 RUN docker-php-ext-install mysqli
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
