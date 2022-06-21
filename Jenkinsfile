@@ -1,82 +1,72 @@
 pipeline {
-  agent any
-  stages {
+    agent any
 
-       stage('Building the software') {
-         steps {
-             echo 'Building the software'
-                    sh '''
-                    echo "Building the software"
-                    '''
-         }
-       }
+	environment {
+		DOCKERHUB_CREDENTIALS=credentials('dockerhub')
+	}
+	
+	stages {
+		stage("Initial cleanup") {
+			steps {
+				dir("${WORKSPACE}") {
+					deleteDir()
+				}
+			}
+		}
 
+    	stage('Clone Github Repo') {
+      		steps {
+            	git branch: 'main', url: 'https://github.com/Horleryheancarh/toooling-1.git'
+      		}
+    	}
 
-       stage('Unit Testing') {
-         steps {
-                    sh '''
-                    echo "Testing the software (Unit Testing)"
-                    '''
+		stage ('Build Docker Image') {
+			steps {
+				script {
+					sh 'docker build -t yheancarh/php_tooling-1:${BRANCH_NAME}-${BUILD_NUMBER} .'
+				}
+			}
+		}
+		
+		stage ('Run docker compose') {
+			steps {
+				script {
+					sh 'docker-compose -f tooling.yaml up -d'
+				}
+			}
+		}
+	
+		stage ('Test Endpoint') {
+			steps {
+				script {
+					while (true) {
+						def res = httpRequest 'http://localhost:5000'
+					}
+				}
+			}
+		}
 
-                    sh '''
-                    echo "Step2"
-                    '''
-         }
-       }
+		stage ('Push Image To Docker Hub') {
+			when { expression { res.status == 200 } }
+			steps {
+				script {
+					sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
 
-       stage('Quality Gate') {
-         steps {
-                    sh '''
-                    echo "Implementing Quality Gate Checks"
-                    '''
-         }
-       }
+					sh 'docker push yheancarh/php_tooling-1:${BRANCH_NAME}-${BUILD_NUMBER}'
+				}
+			}
+		}
 
+		stage('Cleanup') {
+			steps {
+				sh 'docker-compose -f tooling.yaml down'
 
-       stage('Deploy to Dev environment') {
-        when { branch pattern: "^feature.*|^bug.*|^dev", comparator: "REGEXP"}
-         steps {
-                    sh '''
-                    echo "Deploying the software to Non-Production Environment only from Feature Branch"
-                    '''
-         }
-       }
+				sh 'docker logout'
 
-       stage('Deploy to Integration environment') {
-                       when {
-                expression { BRANCH_NAME ==~ /(integration|develop|master)/ }
-            }
-         steps {
-                    sh '''
-                    echo "Deploying the software to Integration Environment from Develop branch for further integration tests"
-                    '''
-         }
-       }
+				sh 'docker system prune -f'
 
-
-       stage('Deploy to pre-production') {
-        when { buildingTag() }
-         steps {
-                    sh '''
-                    echo "Deploying the software to Production Environment from Master branch or a Git Tag"
-                    '''
-         }
-       }
-
-       stage('Deploy to Production') {
-        when { buildingTag() }
-         steps {
-
-            script {
-              timeout(time: 10, unit: 'MINUTES') {
-                input(id: "Deploy Gate", message: "Deploy to production?", ok: 'Deploy')
-              }
-        }
-                    sh '''
-                    echo "Deploying the software to Production Environment from Master branch or a Git Tag"
-                    '''
-         }
-       }
-
-    }
+				cleanWs(cleanWhenAborted: true, cleanWhenFailure: true, cleanWhenNotBuilt: true, cleanWhenUnstable: true, deleteDirs: true)
+			}
+		}
+  	}
 }
